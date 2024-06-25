@@ -1,32 +1,30 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from "react";
-import L, { polygon } from 'leaflet';
-import { LatLng } from "leaflet";
+import L, { LatLng } from 'leaflet';
 import { MapContainer, TileLayer, Tooltip, Popup, Polygon, FeatureGroup } from "react-leaflet";
 import { EditControl } from "react-leaflet-draw";
 import "leaflet/dist/leaflet.css";
 import 'leaflet-draw/dist/leaflet.draw.css';
-import { Toolbar, Typography, Button, Box, IconButton, Snackbar, SnackbarContent } from '@mui/material';
-import ArrowForwardIcon from '@mui/icons-material/ArrowForward'; // Import the arrow icon
+import { IconButton, Snackbar, SnackbarContent } from '@mui/material';
 import { Close as CloseIcon } from '@mui/icons-material';
-import { createPolygon, getPolygons, test, updatePolygon, deletePolygon } from "../services/api";
+import { createPolygon, getPolygons, updatePolygon, deletePolygon } from "../services/api";
+import { CreatePolygonData, UpdatePolygonData, PolygonData } from "../../app/types";
+import ErrorMessage from './ErrorMesssage';
 
-import { createPolygonData, UpdatePolygonData, PolygonData } from "../services/api";
-import { v4 as uuidv4 } from 'uuid';
-
+// Notes
+// Leaflet ID is to track/interact with the drawings in leafletJS. The other ID is for the database.
 
 // Variable constants
 const mapUrl = 'https://www.onemap.gov.sg/maps/tiles/Default/{z}/{x}/{y}.png';
 const default_coordinates: L.LatLng = L.latLng(1.2949332, 103.7931717);
 
-// Formatting missing icons
+// Formatting icons
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-icon.png",
   iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-icon.png",
   shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.3.1/images/marker-shadow.png",
 });
-
 
 // Map Component
 const Map: React.FC = () => {
@@ -34,8 +32,7 @@ const Map: React.FC = () => {
   const [popupPosition, setPopupPosition] = useState<LatLng>(default_coordinates);
   const [showPopup, setShowPopup] = useState<boolean>(false);
 
-  const [currentPolygonId, setCurrentPolygonId] = useState<string>("null");
-  const [currentPolygon, setCurrentPolygon] = useState<PolygonData | null>(null);
+  const [currentPolygonLeafletId, setCurrentPolygonLeafletId] = useState<string>("null");
 
   const [name, setName] = useState<string>("");
   const [address, setAddress] = useState<string>("");
@@ -45,7 +42,6 @@ const Map: React.FC = () => {
   const polygonRef = useRef<L.Polygon | null>(null);
 
   const [tooltipOpened, setTooltipOpened] = useState<boolean>(true);
-  const [mapUrlIndex, setMapUrlIndex] = useState<number>(0); // State to track current map URL index
 
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [loading, setLoading] = useState<boolean>(true);
@@ -54,11 +50,8 @@ const Map: React.FC = () => {
   const fetchAttempted = useRef(false);
 
 
-  // const [jsonData, setJsonData] = useState<JSON>();
-
-  // Initial fetching of saved polygons from backend
+  // Initial database fetching of saved polygons from backend
   useEffect(() => {
-    console.log("USE EFFECT")
     const fetchPolygons = async () => {
       if (fetchAttempted.current) {
         return; // Prevent fetching data again
@@ -68,16 +61,10 @@ const Map: React.FC = () => {
       try {
         setLoading(true);
         const data = await getPolygons();
-        
-        // const json_data = await test();
-        // setJsonData(json_data)
-
         setPolygons(data as PolygonData[]);
-        // setPolygons((prevPolygons) => [...prevPolygons, ...data] as PolygonData[]);
         console.log('fetching polygon database')
-
       } catch (err) {
-        setError('Failed to load polygons');
+        setError('Failed to load polygons from database');
       } finally {
         setLoading(false);
       }
@@ -95,7 +82,6 @@ const Map: React.FC = () => {
     setSnackbarOpen(false);
   };
 
-  // Close pop up
   const closePopup = () => {
     if (popupElRef.current) {
       popupElRef.current.close();
@@ -103,12 +89,9 @@ const Map: React.FC = () => {
   }
 
   // Save edit of polygon details
-  const handleEdit = (polygonId: string) => {
-    // setPolygons(polygons.map(polygon => 
-    //   polygon.leafletID === polygonId ? { ...polygon, name, address, type } : polygon
-    // ));   
+  const handleEdit = (polygonLeafletId: string) => {
     setPolygons(polygons.map(polygon => {
-      if (polygon.leafletID === polygonId) {
+      if (polygon.leafletID === polygonLeafletId) {
         const updatedPolygon = { ...polygon, name, address, type };
         handleUpdatePolygon(updatedPolygon);
         return updatedPolygon;
@@ -116,32 +99,25 @@ const Map: React.FC = () => {
       return polygon;
     }));
     closePopup();
-    setCurrentPolygonId("null"); // Reset current polygon leafletID
+    setCurrentPolygonLeafletId("null"); // Reset current polygon leafletID
     setSnackbarOpen(true); // Success message
-    console.log("Polygon edited:", polygonId);
+    console.log("Polygon edited:", polygonLeafletId);
   };
 
   // Save edit for NEWLY CREATED polygon details
   const handleSave = () => {
-    console.log("HANDLE SAV CALLED")
-    console.log(currentPolygonId)
-    // setPolygons(polygons.map(polygon => 
-    //   polygon.leafletID === currentPolygonId ? { ...polygon, name, address, type } : polygon
-    // ));
     setPolygons(polygons.map(polygon => {
-      if (polygon.leafletID === currentPolygonId) {
+      if (polygon.leafletID === currentPolygonLeafletId) {
         const updatedPolygon = { ...polygon, name, address, type };
-        console.log("HANDLE SAV CALLED: ", updatedPolygon)
         handleUpdatePolygon(updatedPolygon); // Consider returning the response object instead
         return updatedPolygon;
       }
       return polygon;
     }));
     setShowPopup(false); // Only difference from handleEdit -> Because they are different popups
-    setCurrentPolygonId("null");
+    setCurrentPolygonLeafletId("null");
     setSnackbarOpen(true);
-
-    console.log("Polygon saved:", currentPolygonId);
+    console.log("Polygon saved:", currentPolygonLeafletId);
   };
 
   // ---------------------- Handle API Calls ------------------------------
@@ -155,7 +131,7 @@ const Map: React.FC = () => {
   };
 
   const handleCreatePolygon = async (latlngs: LatLng[]) => {
-    const data: createPolygonData = {
+    const data: CreatePolygonData = {
       name: "",
       address: "",
       type: "",
@@ -167,21 +143,18 @@ const Map: React.FC = () => {
         ...response,
         id: response.id.toString(), // Conver id number to string
       };
-
       console.log('Polygon created:', polygonData);
       return polygonData;
     } catch (error) {
       console.error('Error creating polygon:', error);
       return;
-      // Handle error cases
     }
   };
 
-  const handleDeletePolygon = async (polygoID: number) => {
+  const handleDeletePolygon = async (polygonID: number) => {
     try {
-      // const updatedPolygon: UpdatePolygonData = await updatePolygon(polygon);
-      await deletePolygon(polygoID);
-      // console.log("Updated Polygon:", updatedPolygon);
+      await deletePolygon(polygonID); // Delete has no response body/payload
+      console.log("Polygon Deleted:", polygonID);
     } catch (error) {
       console.error("Error deleting polygon:", error);
     }
@@ -193,7 +166,7 @@ const Map: React.FC = () => {
     const latlngs = e.layer.getLatLngs()[0];
     const leafletID = e.layer._leaflet_id.toString();
     setPopupPosition(latlngs[0]);
-    setCurrentPolygonId(leafletID); // Set current polygon leafletID
+    setCurrentPolygonLeafletId(leafletID); // Set current polygon leafletID
     setShowPopup(true); // Show the popup when a polygon is created
     // Reset form fields
     setName("");
@@ -201,19 +174,9 @@ const Map: React.FC = () => {
     setType("");
 
     const result = await handleCreatePolygon(latlngs);
-    // const newPolygon : PolygonData = {
-    //   // ...result, 
-    //   id: result?.id ?? "",
-    //   leafletID: leafletID,
-    //   name: result?.name ?? "",
-    //   address: result?.address ?? "",
-    //   type: result?.type ?? "",
-    //   coordinates: result?.coordinates ?? latlngs, // coordinates cannot be optional
-    // }
 
-    // const tempId = uuidv4(); // Generate a temporary ID
     const newPolygon: PolygonData = {
-      id: result?.id ?? "", // When backend is set up, handle proper id creation
+      id: result?.id ?? "", // ID generated in the database is in the response payload
       leafletID,
       name: "",
       address: "",
@@ -221,12 +184,11 @@ const Map: React.FC = () => {
       coordinates: latlngs,
     };
     setPolygons(prevPolygons => [...prevPolygons, newPolygon]); // Add new polygon to polygons
-    e.layer.remove() // Remove drawn layer
+    e.layer.remove() // Remove drawn layer from overlapping layer
   };
 
   // On addition of new polygon to polygons list, Initialise polygon's leafletID
   const _initialise = (e: any, polygon: PolygonData) => {
-    // console.log("polygon to initialise: " + polygon)
     if (!e || !polygon) {
       console.error("Invalid event or polygon data:", { e, polygon });
     }
@@ -239,19 +201,12 @@ const Map: React.FC = () => {
       prevPolygons.map(p => {
         // Update leafletID if the polygon id matches current polygon
         if (p.id === polygon.id) {
-          // Set currentPolygonId if p.id matches currentPolygonId
+          // Set currentPolygonLeafletId if p.id matches currentPolygonLeafletId
           // This is for the case where a polygon is assigned a new leaflet_id. 
-          // Update the currentPolygonId with the new leaflet id of the polygon
-          console.log(p.id, " + ", currentPolygonId)
-          // if (p.id === currentPolygonId) {
-          if (p.leafletID === currentPolygonId) {
-            console.log("SETTING NEW ID: ", leafletID)
-            setCurrentPolygonId(leafletID);
+          // Update the currentPolygonLeafletId with the new leaflet id of the polygon
+          if (p.leafletID === currentPolygonLeafletId) {
+            setCurrentPolygonLeafletId(leafletID);
           }
-          console.log("polygon to initialise: ", p)
-          console.log("leaftledID new: " + leafletID)
-          console.log("polygon initialised to: ", { ...p, leafletID })
-
           return { ...p, leafletID };
         } else {
           return p;
@@ -260,74 +215,36 @@ const Map: React.FC = () => {
     );
   };
 
-  // On deletion of polygon using the control tools
-  // const _deleted = (e: any) => {
-  //   const deletedIds = e.layers.getLayers().map((layer: any) => layer._leaflet_id); // Get the ids of deleted layers
-  //   console.log("Deleted IDs:", deletedIds); // For debugging
-  //   // Filter out polygons whose ids are not in the deletedIds array
-  //   setPolygons(prevPolygons => 
-  //     prevPolygons.filter(polygon => 
-  //       !deletedIds.includes(parseInt(polygon.leafletID))
-  //     )
-  //   );
-  // };
-
   const _deleted = async (e: any) => {
     const deletedLeafletIds = e.layers.getLayers().map((layer: any) => layer._leaflet_id); // Get the ids of deleted layers
-    // console.log("Deleted IDs:", deletedLeafetIds); // For debugging
-
-    // for (const polygon of polygons) {
-    //   console.log(polygon)
-    //   if (deletedLeafetIds.includes(parseInt(polygon.leafletID))) {
-    //     try {
-    //       await deletePolygon(parseInt(polygon.id));
-    //       console.log(`Polygon with ID ${polygon.id} and leafletID ${polygon.leafletID} deleted successfully`);
-    //     } catch (error) {
-    //       console.error(`Error deleting polygon with ID ${polygon.id} and leafletID ${polygon.leafletID}:`, error);
-    //     }
-    //   }
-    // }
-
-    // polygons.map(polygon => {console.log(polygon); return polygon;})
-    // Filter out polygons whose ids are not in the deletedIds array
-    // console.log(polygons)
-
-    // await deletePolygonsByIds(deletedLeafletIds);
-
-    // setPolygons(prevPolygons => 
-    //   prevPolygons.filter(polygon => 
-    //     !deletedLeafletIds.includes(parseInt(polygon.leafletID))
-    //   )
-    // );
-    setPolygons(prevPolygons => 
-      prevPolygons.map(polygon => {
+    setPolygons(prevPolygons => {
+      const updatedPolygons = prevPolygons.filter(polygon => {
         if (deletedLeafletIds.includes(parseInt(polygon.leafletID))) {
           handleDeletePolygon(parseInt(polygon.id));
+          return false; // Exclude this polygon from the updatedPolygons array
         }
-        return polygon;
-      })
-    );
+        return true; // Include this polygon in the updatedPolygons array
+      });
 
-    setPolygons(prevPolygons => 
-      // prevPolygons.map(polygon => {
-      //   if (deletedLeafletIds.includes(polygon.leafletID)) {
-      //     handleDeletePolygon(parseInt(polygon.id));
-      //   }
-      // });
-
-      prevPolygons.filter(polygon => 
-        !deletedLeafletIds.includes(parseInt(polygon.leafletID))
-      )
-    );
+      setSnackbarOpen(true); // Open snackbar after processing
+      return updatedPolygons;
+    });
   };
+  
 
-  const deletePolygonsByIds = async (deletedLeafletIds: number[]) => {
-    for (const polygon of polygons) {
-      console.log(polygon)
-      if (deletedLeafletIds.includes(parseInt(polygon.leafletID))) {
-        await deletePolygon(parseInt(polygon.id));
+  // On editing of polygons using drawing control tool
+  const _edited = (e: any) => {
+    const layers = e.layers._layers;
+    // For each layer edited
+    for (const id in layers) {
+      if (layers.hasOwnProperty(id)) {
+        const layer = layers[id];
+        if (layer instanceof L.Polygon) {
+          updatePolygonCoordinates(layer);
+        }
       }
     }
+    setSnackbarOpen(true);
   };
 
 
@@ -353,50 +270,23 @@ const Map: React.FC = () => {
     });
   };
 
-  
-  // On editing of polygons using drawing control tool
-  const _edited = (e: any) => {
-    console.log(polygons)
-    const layers = e.layers._layers;
-    // For each layer edited
-    for (const id in layers) {
-      if (layers.hasOwnProperty(id)) {
-        const layer = layers[id];
-        if (layer instanceof L.Polygon) {
-          updatePolygonCoordinates(layer);
-        }
-      }
-    }
-  };
-
-
   const openPopupForPolygon = (polygon: PolygonData) => {
-    setCurrentPolygon(polygon);
-    setCurrentPolygonId(polygon.leafletID);
-
+    setCurrentPolygonLeafletId(polygon.leafletID);
     // Prefill form fields
     setName(polygon.name);
     setAddress(polygon.address);
     setType(polygon.type);
   };
-
   
   if (loading) {
     return <div>Loading...</div>;
   } else if (error) {
-    return <div>{error}</div>;
+    return <div>{error && <ErrorMessage message={error} />}</div>;
   }
   return (
-    // <div className="min-h-screen flex flex-col">
     <div>
       {/* Map component */}
       <div style={{ width: '100%', height: '100%', backgroundColor: '#f0f0f0' }}>
-      {/* <div className="flex-grow"> */}
-
-        {/*<h1>
-          {JSON.stringify(jsonData)}
-        </h1>*/}
-
         <MapContainer 
           center={default_coordinates} 
           zoom={13} 
@@ -432,7 +322,7 @@ const Map: React.FC = () => {
                 key={polygon.id} 
                 positions={polygon.coordinates}
                 ref={(el) => { 
-                  if (el && polygon.leafletID === currentPolygonId) { 
+                  if (el && polygon.leafletID === currentPolygonLeafletId) { 
                     polygonRef.current = el;
                   } 
                 }} 
@@ -441,7 +331,6 @@ const Map: React.FC = () => {
                     openPopupForPolygon(polygon);
                   },
                   add: (e) => {
-                    console.log("re-initialising");
                     _initialise(e, polygon);
                   }, 
                   popupopen: () => {
@@ -467,10 +356,9 @@ const Map: React.FC = () => {
                   </Tooltip>
                 )}
 
-
                 <Popup 
                   ref={(el) => { 
-                    if (el && polygon.leafletID === currentPolygonId) { 
+                    if (el && polygon.leafletID === currentPolygonLeafletId) { 
                       popupElRef.current = el;
                     } 
                   }} 
@@ -500,7 +388,7 @@ const Map: React.FC = () => {
                 className="flex flex-col space-y-4"
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
-                    handleSave(); // Call handleEdit when Enter is pressed
+                    handleSave(); // Call handleSave when Enter is pressed
                   }
                 }}
                 tabIndex={0} // Ensure the div is focusable to capture key events
@@ -525,9 +413,9 @@ const Map: React.FC = () => {
         onClose={handleSnackbarClose}
       >
         <SnackbarContent
-          style={{
-            backgroundColor: '#4caf50',
-          }}
+          // style={{
+          //   backgroundColor: '#4caf50',
+          // }}
           message={
             <span id="client-snackbar" style={{ display: 'flex', alignItems: 'center' }}>
               Changes saved successfully
@@ -541,7 +429,7 @@ const Map: React.FC = () => {
               onClick={handleSnackbarClose}
             >
               <CloseIcon />
-            </IconButton>,
+            </IconButton>
           ]}
         />
       </Snackbar>

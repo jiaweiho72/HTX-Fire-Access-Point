@@ -1,14 +1,13 @@
+// CSR as using useRouter
 'use client'
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
-
 const Navbar: React.FC = () => {
   const router = useRouter();
 
   const handleSignOut = () => {
-    // Implement your signout logic here
     router.push('/');
     console.log('Signing out...');
   };

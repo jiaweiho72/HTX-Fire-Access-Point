@@ -30,3 +30,6 @@ docker-compose down
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ```
+
+
+Create .env environment file

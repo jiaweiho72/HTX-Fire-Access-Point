@@ -14,7 +14,7 @@ const Login = () => {
   const handleLogin = (e: any) => {
     e.preventDefault();
     setError('');
-
+    // Authentication logic
     if (username === 'admin' && password === 'password') {
       console.log('Login successful');
       router.push('/pages/map');
